@@ -1,0 +1,58 @@
+rules_version = '2';
+
+// Säkerhetsregler för Hemkoll.
+// Grundregel: bara de som är med i en flik ser det som finns i den.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function isMember(sid) {
+      return signedIn() && me() in get(/databases/$(database)/documents/spaces/$(sid)).data.members;
+    }
+
+    // Din egen profil.
+    match /users/{uid} {
+      allow read, write: if signedIn() && me() == uid;
+    }
+
+    // Uppslag så att man kan bjuda in med e-post.
+    match /emails/{email} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create, update: if signedIn()
+        && request.resource.data.uid == me()
+        && email == request.auth.token.email.lower();
+      allow delete: if signedIn() && resource.data.uid == me();
+    }
+
+    // Flikar (hushåll).
+    match /spaces/{sid} {
+      allow read: if signedIn() && (me() in resource.data.members || me() in resource.data.invited);
+
+      allow create: if signedIn()
+        && request.resource.data.owner == me()
+        && request.resource.data.members == [me()];
+
+      allow update: if signedIn() && (
+        // De som är med får ändra namn, bjuda in och ta bort.
+        (me() in resource.data.members && request.resource.data.owner == resource.data.owner)
+        ||
+        // Den som är inbjuden får bara lägga till sig själv, eller tacka nej.
+        (me() in resource.data.invited
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'invited', 'memberNames'])
+          && request.resource.data.members.hasAll(resource.data.members)
+          && request.resource.data.members.removeAll(resource.data.members).hasOnly([me()])
+          && !(me() in request.resource.data.invited))
+      );
+
+      allow delete: if signedIn() && resource.data.owner == me();
+
+      // Allt i fliken: pärm, bilder, påminnelser, budget.
+      match /{path=**} {
+        allow read, write: if isMember(sid);
+      }
+    }
+  }
+}
