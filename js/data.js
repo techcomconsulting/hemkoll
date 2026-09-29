@@ -5,36 +5,69 @@ import {
   deleteUser, reauthenticateWithCredential, EmailAuthProvider
 } from './firebase.js';
 
-// ---------- Snabbt minne för sessionen ----------
+// ---------- Snabb läsning ----------
+// 1. Minne för sessionen. 2. Sparad kopia i telefonen (små listor) så att appen
+// visar något direkt när den startar. Nytt hämtas alltid i bakgrunden.
 const mem = new Map();
+const LS = 'hk-cache:';
 let gen = 0;
+let onChange = () => {};
+export function onDataChange(fn) { onChange = fn; }
+const uidKey = (key) => (auth.currentUser?.uid || '') + ':' + key;
+function lsGet(k) { try { return JSON.parse(localStorage.getItem(LS + k)); } catch { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(LS + k, JSON.stringify(v)); } catch { /* fullt */ } }
 export function invalidate(...parts) {
   gen++;
-  if (!parts.length) { mem.clear(); return; }
-  for (const k of [...mem.keys()]) if (parts.some((p) => k.includes(p))) mem.delete(k);
+  const hit = (k) => !parts.length || parts.some((p) => k.includes(p));
+  for (const k of [...mem.keys()]) if (hit(k)) mem.delete(k);
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(LS) && hit(k.slice(LS.length))) localStorage.removeItem(k);
+    }
+  } catch { /* ok */ }
 }
-function refresh(q, k) {
+function same(a, b) { try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; } }
+function refreshRows(q, k, persist, force = false) {
   const hit = mem.get(k);
-  if (hit && Date.now() - hit.t < 15000) return;
+  if (!force && hit && Date.now() - hit.t < 15000) return;
   if (hit) hit.t = Date.now();
   const g = gen;
-  getDocsFromServer(q).then((s) => { if (g === gen) mem.set(k, { s, t: Date.now() }); }).catch(() => {});
+  getDocsFromServer(q).then((s) => {
+    if (g !== gen) return;
+    const r = rows(s);
+    const changed = !same(r, mem.get(k)?.rows);
+    mem.set(k, { rows: r, t: Date.now() });
+    if (persist) lsSet(k, r);
+    if (changed) onChange();
+  }).catch(() => {});
 }
-async function fastDocs(q, key) {
-  const k = (auth.currentUser?.uid || '') + ':' + key;
-  if (mem.has(k)) { const s = mem.get(k).s; refresh(q, k); return s; }
+async function fastRows(q, key, persist = true) {
+  const k = uidKey(key);
+  if (mem.has(k)) { refreshRows(q, k, persist); return mem.get(k).rows; }
+  if (persist) {
+    const c = lsGet(k);
+    if (c) { mem.set(k, { rows: c, t: 0 }); refreshRows(q, k, persist, true); return c; }
+  }
   const g = gen;
-  const s = await getDocs(q);
-  if (g === gen) mem.set(k, { s, t: Date.now() });
-  return s;
+  const r = rows(await getDocs(q));
+  if (g === gen) { mem.set(k, { rows: r, t: Date.now() }); if (persist) lsSet(k, r); }
+  return r;
 }
 const rows = (s) => s.docs.map((d) => ({ id: d.id, ...d.data() }));
 
 // ---------- Konto ----------
 
-export async function getProfile(uid) {
-  const s = await getDoc(doc(db, 'users', uid));
-  return s.exists() ? s.data() : null;
+export async function getProfile(uid, fast = false) {
+  const k = 'profile:' + uid;
+  const load = async () => {
+    const s = await getDoc(doc(db, 'users', uid));
+    const v = s.exists() ? s.data() : null;
+    if (v) lsSet(k, { firstName: v.firstName, email: v.email, personalSpace: v.personalSpace || null });
+    return v;
+  };
+  if (fast) { const c = lsGet(k); if (c) { load().catch(() => {}); return c; } }
+  return load();
 }
 
 export async function setupAccount(user, firstName) {
@@ -61,8 +94,8 @@ export async function lookupEmail(email) {
 // ---------- Flikar (hushåll) ----------
 
 export async function loadSpaces(uid) {
-  const s = await fastDocs(query(collection(db, 'spaces'), where('members', 'array-contains', uid)), 'spaces');
-  return rows(s).sort((a, b) => (b.personal ? 1 : 0) - (a.personal ? 1 : 0) || a.name.localeCompare(b.name, 'sv'));
+  const r = await fastRows(query(collection(db, 'spaces'), where('members', 'array-contains', uid)), 'spaces');
+  return [...r].sort((a, b) => (b.personal ? 1 : 0) - (a.personal ? 1 : 0) || a.name.localeCompare(b.name, 'sv'));
 }
 
 export async function loadInvites(uid) {
@@ -148,8 +181,8 @@ export const DOC_CATS = [
 ];
 
 export async function loadDocs(sid) {
-  const s = await fastDocs(query(collection(db, 'spaces', sid, 'docs')), 'docs:' + sid);
-  return rows(s).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  const r = await fastRows(query(collection(db, 'spaces', sid, 'docs')), 'docs:' + sid);
+  return [...r].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
 }
 
 export async function getDocument(sid, id) {
@@ -174,8 +207,7 @@ export async function deleteDocument(sid, id) {
 }
 
 export async function loadFiles(sid, id) {
-  const s = await fastDocs(query(collection(db, 'spaces', sid, 'docs', id, 'files'), orderBy('at')), 'files:' + id);
-  return rows(s);
+  return fastRows(query(collection(db, 'spaces', sid, 'docs', id, 'files'), orderBy('at')), 'files:' + id, false);
 }
 
 export async function addFile(sid, id, data, count) {
@@ -197,8 +229,8 @@ export async function deleteFile(sid, id, fileId, count) {
 // ---------- Påminnelser ----------
 
 export async function loadReminders(sid) {
-  const s = await fastDocs(query(collection(db, 'spaces', sid, 'reminders')), 'reminders:' + sid);
-  return rows(s).sort((a, b) => String(a.next || '').localeCompare(String(b.next || '')));
+  const r = await fastRows(query(collection(db, 'spaces', sid, 'reminders')), 'reminders:' + sid);
+  return [...r].sort((a, b) => String(a.next || '').localeCompare(String(b.next || '')));
 }
 
 export async function saveReminder(sid, data, id = null) {
@@ -227,8 +259,7 @@ export function occursIn(item, y, m) {
 }
 
 export async function loadItems(sid) {
-  const s = await fastDocs(query(collection(db, 'spaces', sid, 'items')), 'items:' + sid);
-  return rows(s);
+  return fastRows(query(collection(db, 'spaces', sid, 'items')), 'items:' + sid);
 }
 
 export async function saveItem(sid, data, id = null) {
@@ -243,19 +274,28 @@ export async function deleteItem(sid, id) {
 }
 
 export async function loadPaid(sid, ym) {
-  const k = (auth.currentUser?.uid || '') + ':paid:' + sid + ':' + ym;
-  if (mem.has(k)) return mem.get(k).s;
-  const s = await getDoc(doc(db, 'spaces', sid, 'paid', ym));
-  const v = s.exists() ? s.data() : {};
-  mem.set(k, { s: v, t: Date.now() });
-  return v;
+  const k = uidKey('paid:' + sid + ':' + ym);
+  const load = async () => {
+    const s = await getDoc(doc(db, 'spaces', sid, 'paid', ym));
+    const v = s.exists() ? s.data() : {};
+    const old = mem.get(k)?.s;
+    mem.set(k, { s: v, t: Date.now() });
+    lsSet(k, v);
+    if (old && !same(old, v)) onChange();
+    return v;
+  };
+  if (mem.has(k)) { const hit = mem.get(k); if (Date.now() - hit.t > 15000) { hit.t = Date.now(); load().catch(() => {}); } return hit.s; }
+  const c = lsGet(k);
+  if (c) { mem.set(k, { s: c, t: 0 }); load().catch(() => {}); return c; }
+  return load();
 }
 
 export async function setPaid(sid, ym, itemId, paid) {
-  const k = (auth.currentUser?.uid || '') + ':paid:' + sid + ':' + ym;
+  const k = uidKey('paid:' + sid + ':' + ym);
   const cur = mem.get(k)?.s || {};
-  cur[itemId] = paid;
+  if (paid) cur[itemId] = true; else delete cur[itemId];
   mem.set(k, { s: cur, t: Date.now() });
+  lsSet(k, cur);
   await setDoc(doc(db, 'spaces', sid, 'paid', ym), { [itemId]: paid ? true : deleteField() }, { merge: true });
 }
 

@@ -1,6 +1,6 @@
 // Startpunkten: inloggning, sidor, flikar och meny.
 import { isConfigured, auth, onAuthStateChanged } from './firebase.js';
-import { getProfile, loadSpaces, loadInvites, prefetch } from './data.js';
+import { getProfile, loadSpaces, loadInvites, prefetch, onDataChange } from './data.js';
 import { icon, esc } from './ui.js';
 import './install.js';
 import { loginView, registerView, forgotView } from './views/auth.js';
@@ -34,7 +34,7 @@ const routes = [
 export const ctx = {
   state,
   go: (path) => { if (location.hash === '#' + path) route(); else location.hash = '#' + path; },
-  rerender: () => route(),
+  rerender: () => route(true),
   space: () => state.spaces.find((s) => s.id === state.spaceId) || state.spaces[0] || null,
   setSpace: (id) => {
     state.spaceId = id;
@@ -42,11 +42,15 @@ export const ctx = {
     prefetch(state.user.uid, id);
     route();
   },
-  reloadSpaces: async () => {
-    const [spaces, invites] = await Promise.all([loadSpaces(state.user.uid), loadInvites(state.user.uid)]);
-    state.spaces = spaces;
-    state.invites = invites;
-    if (!spaces.some((s) => s.id === state.spaceId)) state.spaceId = spaces[0]?.id || null;
+  reloadSpaces: async (waitInvites = true) => {
+    const inv = loadInvites(state.user.uid).then((invites) => {
+      const changed = invites.length !== state.invites.length;
+      state.invites = invites;
+      if (changed && !waitInvites) softRender();
+    });
+    state.spaces = await loadSpaces(state.user.uid);
+    if (!state.spaces.some((s) => s.id === state.spaceId)) state.spaceId = state.spaces[0]?.id || null;
+    if (waitInvites) await inv;
   },
   reloadProfile: async () => { state.profile = await getProfile(state.user.uid); },
   startSession: null
@@ -80,8 +84,22 @@ function renderNav(active) {
   nav.querySelector('[data-add]').addEventListener('click', (e) => { e.preventDefault(); openAddMenu(ctx); });
 }
 
+// Ny data kom i bakgrunden: rita om sidan utan att hoppa upp.
+let softTimer;
+function softRender() {
+  clearTimeout(softTimer);
+  softTimer = setTimeout(async () => {
+    if (!state.user || document.querySelector('.sheet-backdrop')) return;
+    const a = document.activeElement;
+    if (a && ['INPUT', 'TEXTAREA', 'SELECT'].includes(a.tagName)) return;
+    if (state.user) state.spaces = await loadSpaces(state.user.uid).catch(() => state.spaces);
+    route(true);
+  }, 300);
+}
+onDataChange(softRender);
+
 let routing = 0;
-async function route() {
+async function route(keepScroll = false) {
   const path = (location.hash.replace(/^#/, '') || '/').split('?')[0];
   if (!state.user && !PUBLIC.includes(path)) { location.hash = '#/login'; return; }
   if (state.user && PUBLIC.includes(path)) { location.hash = '#/'; return; }
@@ -91,14 +109,15 @@ async function route() {
   const params = path.match(re).slice(1).map(decodeURIComponent);
   const my = ++routing;
   renderNav(state.user ? active : null);
-  const slow = setTimeout(() => { if (my === routing) root.innerHTML = '<div class="boot">Laddar…</div>'; }, 350);
+  const y = window.scrollY;
+  const slow = keepScroll ? null : setTimeout(() => { if (my === routing) root.innerHTML = '<div class="boot">Laddar…</div>'; }, 350);
   try {
     const html = document.createElement('div');
     await view(html, ctx, ...params);
     clearTimeout(slow);
     if (my !== routing) return;
     root.replaceChildren(html);
-    window.scrollTo(0, 0);
+    window.scrollTo(0, keepScroll ? y : 0);
   } catch (e) {
     clearTimeout(slow);
     console.error(e);
@@ -108,9 +127,12 @@ async function route() {
 }
 
 async function startSession(user) {
-  try { state.profile = await getProfile(user.uid); } catch { state.profile = null; }
   try { state.spaceId = localStorage.getItem('hk-space'); } catch { /* ok */ }
-  await ctx.reloadSpaces().catch(() => {});
+  const [profile] = await Promise.all([
+    getProfile(user.uid, true).catch(() => null),
+    ctx.reloadSpaces(false).catch(() => {})
+  ]);
+  state.profile = profile;
   prefetch(user.uid, state.spaceId);
 }
 ctx.startSession = startSession;
@@ -120,7 +142,7 @@ if (!isConfigured) {
     <div class="banner soft">Appen är inte kopplad till Firebase än.</div>
     <p>Öppna filen <b>js/config.js</b> och klistra in dina Firebase-uppgifter.</p></div>`;
 } else {
-  window.addEventListener('hashchange', route);
+  window.addEventListener('hashchange', () => route());
   onAuthStateChanged(auth, async (user) => {
     state.user = user;
     if (state.registering) return;
