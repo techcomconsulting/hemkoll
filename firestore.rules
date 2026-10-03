@@ -49,9 +49,25 @@ service cloud.firestore {
 
       allow delete: if signedIn() && resource.data.owner == me();
 
-      // Allt i fliken: pärm, bilder, påminnelser, budget.
+      // Allt i fliken: pärm, tidslinje, bilder, påminnelser, budget.
       match /{path=**} {
         allow read, write: if isMember(sid);
+      }
+    }
+
+    // Delade länkar till husets tidslinje (till en ny ägare).
+    // Länken är lång och slumpad. Den som har den kan läsa kopian.
+    match /shares/{token} {
+      allow get: if true;
+      allow list: if signedIn() && resource.data.owner == me();
+      allow create: if signedIn() && request.resource.data.owner == me()
+        && isMember(request.resource.data.space);
+      allow delete: if signedIn() && resource.data.owner == me();
+
+      match /files/{fid} {
+        allow read: if true;
+        allow create, delete: if signedIn()
+          && get(/databases/$(database)/documents/shares/$(token)).data.owner == me();
       }
     }
   }

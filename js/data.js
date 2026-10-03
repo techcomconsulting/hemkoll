@@ -162,6 +162,11 @@ export async function deleteSpace(sid) {
     (await getDocs(collection(d.ref, 'files'))).forEach((f) => refs.push(f.ref));
     refs.push(d.ref);
   }
+  const evSnap = await getDocs(collection(db, 'spaces', sid, 'events'));
+  for (const e of evSnap.docs) {
+    (await getDocs(collection(e.ref, 'files'))).forEach((f) => refs.push(f.ref));
+    refs.push(e.ref);
+  }
   for (const name of ['reminders', 'items', 'paid']) {
     (await getDocs(collection(db, 'spaces', sid, name))).forEach((d) => refs.push(d.ref));
   }
@@ -301,6 +306,152 @@ export async function setPaid(sid, ym, itemId, paid) {
 
 export const ymKey = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
 
+// ---------- Tidslinjen (husets historia) ----------
+
+export const EVENT_KINDS = [
+  ['renovation', 'Renovering', 'hammer'],
+  ['purchase', 'Nytt köp', 'tag'],
+  ['repair', 'Reparation', 'tool'],
+  ['service', 'Service', 'repeat'],
+  ['other', 'Övrigt', 'flag']
+];
+
+export async function loadEvents(sid) {
+  const r = await fastRows(query(collection(db, 'spaces', sid, 'events')), 'events:' + sid);
+  return [...r].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+}
+
+export async function getEvent(sid, id) {
+  const s = await getDoc(doc(db, 'spaces', sid, 'events', id));
+  return s.exists() ? { id: s.id, ...s.data() } : null;
+}
+
+export async function saveEvent(sid, data, id = null) {
+  invalidate('events:' + sid);
+  if (id) { await updateDoc(doc(db, 'spaces', sid, 'events', id), { ...data, updatedAt: serverTimestamp() }); return id; }
+  const ref = await addDoc(collection(db, 'spaces', sid, 'events'), {
+    docIds: [], ...data, fileCount: 0, createdAt: serverTimestamp(), createdBy: auth.currentUser.uid
+  });
+  return ref.id;
+}
+
+export async function deleteEvent(sid, id) {
+  invalidate('events:' + sid, 'efiles:' + id);
+  const files = await getDocs(collection(db, 'spaces', sid, 'events', id, 'files'));
+  const b = writeBatch(db);
+  files.forEach((f) => b.delete(f.ref));
+  b.delete(doc(db, 'spaces', sid, 'events', id));
+  await b.commit();
+}
+
+export async function loadEventFiles(sid, id) {
+  return fastRows(query(collection(db, 'spaces', sid, 'events', id, 'files'), orderBy('at')), 'efiles:' + id, false);
+}
+
+export async function addEventFile(sid, id, data, count) {
+  invalidate('efiles:' + id, 'events:' + sid);
+  const b = writeBatch(db);
+  b.set(doc(collection(db, 'spaces', sid, 'events', id, 'files')), { data, at: Timestamp.now() });
+  b.update(doc(db, 'spaces', sid, 'events', id), { fileCount: count + 1 });
+  await b.commit();
+}
+
+export async function deleteEventFile(sid, id, fileId, count) {
+  invalidate('efiles:' + id, 'events:' + sid);
+  const b = writeBatch(db);
+  b.delete(doc(db, 'spaces', sid, 'events', id, 'files', fileId));
+  b.update(doc(db, 'spaces', sid, 'events', id), { fileCount: Math.max(0, count - 1) });
+  await b.commit();
+}
+
+export async function setEventDocs(sid, id, docIds) {
+  invalidate('events:' + sid);
+  await updateDoc(doc(db, 'spaces', sid, 'events', id), { docIds });
+}
+
+// ---------- Dela husets logg med en ny ägare ----------
+// En kopia sparas under en hemlig länk. Den som har länken kan se den
+// och spara den i sin egen Hemkoll.
+
+function newToken() {
+  const abc = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const r = crypto.getRandomValues(new Uint32Array(24));
+  return [...r].map((n) => abc[n % abc.length]).join('');
+}
+
+const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] != null && o[k] !== '').map((k) => [k, o[k]]));
+
+export async function createShare(sid, { house, fromName, eventIds, withAmounts }) {
+  const uid = auth.currentUser.uid;
+  const events = (await loadEvents(sid)).filter((e) => eventIds.includes(e.id));
+  const allDocs = await loadDocs(sid);
+  const docIds = [...new Set(events.flatMap((e) => e.docIds || []))].filter((id) => allDocs.some((d) => d.id === id));
+  const docs = allDocs.filter((d) => docIds.includes(d.id));
+  const money = withAmounts ? ['cost', 'amount'] : [];
+
+  const token = newToken();
+  await setDoc(doc(db, 'shares', token), {
+    owner: uid, space: sid, house, fromName, createdAt: serverTimestamp(),
+    events: events.map((e) => ({
+      key: e.id, ...pick(e, ['title', 'date', 'kind', 'note', 'link', ...money]),
+      docKeys: (e.docIds || []).filter((id) => docIds.includes(id))
+    })),
+    docs: docs.map((d) => ({ key: d.id, ...pick(d, ['title', 'category', 'date', 'place', 'warrantyUntil', 'note', ...money]) }))
+  });
+
+  // Bilderna, en i taget (de är stora).
+  let i = 0;
+  for (const e of events) {
+    for (const f of await loadEventFiles(sid, e.id)) await setDoc(doc(collection(db, 'shares', token, 'files')), { to: 'e:' + e.id, data: f.data, i: i++ });
+  }
+  for (const d of docs) {
+    for (const f of await loadFiles(sid, d.id)) await setDoc(doc(collection(db, 'shares', token, 'files')), { to: 'd:' + d.id, data: f.data, i: i++ });
+  }
+  invalidate('shares:');
+  return token;
+}
+
+export async function loadMyShares(sid) {
+  const uid = auth.currentUser.uid;
+  const r = await fastRows(query(collection(db, 'shares'), where('owner', '==', uid), where('space', '==', sid)), 'shares:' + sid);
+  return [...r].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+}
+
+export async function deleteShare(token) {
+  invalidate('shares:');
+  const files = await getDocs(collection(db, 'shares', token, 'files'));
+  await deleteCollectionDocs(files.docs.map((f) => f.ref));
+  await deleteDoc(doc(db, 'shares', token));
+}
+
+export async function getShare(token) {
+  const s = await getDoc(doc(db, 'shares', token));
+  if (!s.exists()) return null;
+  const files = await getDocs(collection(db, 'shares', token, 'files'));
+  return { id: s.id, ...s.data(), files: rows(files).sort((a, b) => a.i - b.i) };
+}
+
+// Köparen sparar loggen i en ny flik i sin egen app.
+export async function importShare(share, uid, firstName) {
+  const sid = await createSpace(uid, firstName, (share.house || 'Huset').slice(0, 30));
+  const filesFor = (to) => share.files.filter((f) => f.to === to);
+  const docMap = {};
+  for (const d of share.docs || []) {
+    const { key, ...data } = d;
+    const id = await saveDocument(sid, { title: '', category: 'other', ...data });
+    let n = 0;
+    for (const f of filesFor('d:' + key)) await addFile(sid, id, f.data, n++);
+    docMap[key] = id;
+  }
+  for (const e of share.events || []) {
+    const { key, docKeys, ...data } = e;
+    const id = await saveEvent(sid, { title: '', kind: 'other', ...data, docIds: (docKeys || []).map((k) => docMap[k]).filter(Boolean) });
+    let n = 0;
+    for (const f of filesFor('e:' + key)) await addEventFile(sid, id, f.data, n++);
+  }
+  return sid;
+}
+
 // ---------- Radera kontot ----------
 
 export async function deleteAccount(password, personalSpaceId) {
@@ -311,6 +462,8 @@ export async function deleteAccount(password, personalSpaceId) {
     if (s.owner === user.uid && (s.personal || s.members.length === 1)) await deleteSpace(s.id);
     else await removeMember(s.id, user.uid);
   }
+  const shares = await getDocs(query(collection(db, 'shares'), where('owner', '==', user.uid))).catch(() => null);
+  for (const sh of shares?.docs || []) await deleteShare(sh.id).catch(() => {});
   const invites = await loadInvites(user.uid);
   for (const s of invites) await declineInvite(s.id, user.uid).catch(() => {});
   await deleteDoc(doc(db, 'emails', user.email.toLowerCase())).catch(() => {});
@@ -320,7 +473,7 @@ export async function deleteAccount(password, personalSpaceId) {
 
 export function prefetch(uid, sid) {
   if (!sid) return;
-  [() => loadDocs(sid), () => loadReminders(sid), () => loadItems(sid)].forEach((j) => j().catch(() => {}));
+  [() => loadDocs(sid), () => loadReminders(sid), () => loadItems(sid), () => loadEvents(sid)].forEach((j) => j().catch(() => {}));
 }
 
 export { Timestamp };

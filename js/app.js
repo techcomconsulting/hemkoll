@@ -10,6 +10,7 @@ import { remindersView } from './views/reminders.js';
 import { budgetView } from './views/budget.js';
 import { moreView, spaceView } from './views/more.js';
 import { openAddMenu } from './views/add.js';
+import { timelineView, eventView, shareView, PENDING_IMPORT } from './views/timeline.js';
 
 const root = document.getElementById('app');
 const nav = document.getElementById('nav');
@@ -17,6 +18,8 @@ const nav = document.getElementById('nav');
 export const state = { user: null, profile: null, spaces: [], invites: [], spaceId: null, registering: false };
 
 const PUBLIC = ['/login', '/registrera', '/glomt'];
+// Sidor som alla kan öppna, inloggad eller inte.
+const OPEN = /^\/delning\/[^/]+$/;
 
 const routes = [
   [/^\/login$/, loginView, null],
@@ -26,6 +29,9 @@ const routes = [
   [/^\/parm$/, binderView, 'binder'],
   [/^\/parm\/([^/]+)$/, docView, 'binder'],
   [/^\/paminnelser$/, remindersView, 'home'],
+  [/^\/tidslinje$/, timelineView, 'more'],
+  [/^\/tidslinje\/([^/]+)$/, eventView, 'more'],
+  [/^\/delning\/([^/]+)$/, shareView, null],
   [/^\/budget$/, budgetView, 'budget'],
   [/^\/mer$/, moreView, 'more'],
   [/^\/flik\/([^/]+)$/, spaceView, 'more']
@@ -101,8 +107,15 @@ onDataChange(softRender);
 let routing = 0;
 async function route(keepScroll = false) {
   const path = (location.hash.replace(/^#/, '') || '/').split('?')[0];
-  if (!state.user && !PUBLIC.includes(path)) { location.hash = '#/login'; return; }
+  const open = OPEN.test(path);
+  if (!state.user && !PUBLIC.includes(path) && !open) { location.hash = '#/login'; return; }
   if (state.user && PUBLIC.includes(path)) { location.hash = '#/'; return; }
+  // Kom personen från en delad länk? Gå tillbaka dit efter inloggning.
+  if (state.user && state.profile && !open) {
+    let t = null;
+    try { t = localStorage.getItem(PENDING_IMPORT); localStorage.removeItem(PENDING_IMPORT); } catch { /* ok */ }
+    if (t) { location.hash = '#/delning/' + t; return; }
+  }
   const found = routes.find(([re]) => re.test(path));
   if (!found) { location.hash = '#/'; return; }
   const [re, view, active] = found;
@@ -142,7 +155,7 @@ if (!isConfigured) {
     <div class="banner soft">Appen är inte kopplad till Firebase än.</div>
     <p>Öppna filen <b>js/config.js</b> och klistra in dina Firebase-uppgifter.</p></div>`;
 } else {
-  window.addEventListener('hashchange', () => route());
+  window.addEventListener('hashchange', () => { document.querySelectorAll('.sheet-backdrop').forEach((x) => x.remove()); route(); });
   onAuthStateChanged(auth, async (user) => {
     state.user = user;
     if (state.registering) return;

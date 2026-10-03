@@ -32,6 +32,10 @@ export async function moreView(el, ctx) {
     </section>
 
     <section class="card flush">
+      <a class="list-row" href="#/tidslinje"><span style="color:var(--accent)">${icon('clock', 22)}</span><span class="grow title" style="font-weight:600">Husets tidslinje</span>${icon('right', 18, 2)}</a>
+    </section>
+
+    <section class="card flush">
       ${isInstalled() ? '' : `<button class="list-row" data-home><img src="icons/icon-192.png" alt="" width="22" height="22" style="border-radius:6px"><span class="grow title" style="font-weight:600">Lägg till på hemskärmen</span>${icon('right', 18, 2)}</button>`}
       <button class="list-row" data-logout><span class="grow title" style="font-weight:600">Logga ut</span></button>
     </section>

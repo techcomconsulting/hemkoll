@@ -15,7 +15,13 @@ Kvitton, garantier, påminnelser och budget. På ett ställe.
 
 Adressen blir: `https://techcomconsulting.github.io/hemkoll/`
 
+## Tidslinjen (husets historia)
+
+- Lägg in renoveringar, nya köp och service. Med bilder, länk till manual och kvitton från pärmen.
+- **Säljer du huset?** Tryck *Dela med ny ägare*. Köparen får en länk och kan spara allt i sin egen Hemkoll.
+- **Viktigt:** efter den här uppdateringen måste reglerna i `firestore.rules` klistras in i Firebase igen (se steg 2).
+
 ## Bra att veta
 
 - **Gratis.** Bilder sparas förminskade i databasen, så inget kort behövs.
-- **Ny version?** Ändra `hemkoll-v1` till `hemkoll-v2` i `sw.js`.
+- **Ny version?** Ändra versionen (t.ex. `hemkoll-v3` till `hemkoll-v4`) i `sw.js`.

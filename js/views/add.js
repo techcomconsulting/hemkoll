@@ -3,6 +3,7 @@ import { openSheet, icon } from '../ui.js';
 import { openDocEditor } from './binder.js';
 import { openReminderEditor } from './reminders.js';
 import { openItemEditor } from './budget.js';
+import { openEventEditor } from './timeline.js';
 
 export function openAddMenu(ctx) {
   const opt = (key, ic, title, sub) => `<button class="list-row" data-pick="${key}" style="border-radius:0">
@@ -14,6 +15,7 @@ export function openAddMenu(ctx) {
       ${opt('receipt', 'receipt', 'Kvitto', 'Fota kvittot och spara')}
       ${opt('warranty', 'shield', 'Garanti eller försäkring', 'Få påminnelse innan den går ut')}
       ${opt('manual', 'book', 'Bruksanvisning eller avtal', 'Allt samlat i pärmen')}
+      ${opt('event', 'clock', 'Händelse i tidslinjen', 'Renovering, nytt köp, service')}
       ${opt('reminder', 'bell', 'Påminnelse', 't.ex. byt filter varje halvår')}
       ${opt('expense', 'wallet', 'Utgift eller räkning', 'Hyra, el, abonnemang')}
       ${opt('income', 'plus', 'Inkomst', 'Lön, barnbidrag')}
@@ -23,6 +25,7 @@ export function openAddMenu(ctx) {
     const k = b.dataset.pick;
     s.close();
     if (['receipt', 'warranty', 'manual'].includes(k)) openDocEditor(ctx, null, k);
+    else if (k === 'event') openEventEditor(ctx);
     else if (k === 'reminder') openReminderEditor(ctx);
     else openItemEditor(ctx, k);
   }));

@@ -1,5 +1,5 @@
 // Översikt: det viktigaste just nu.
-import { loadDocs, loadReminders, loadItems, loadPaid, ymKey, occursIn, acceptInvite, declineInvite } from '../data.js';
+import { loadDocs, loadReminders, loadItems, loadEvents, loadPaid, ymKey, occursIn, acceptInvite, declineInvite } from '../data.js';
 import { esc, icon, kr, dDay, toast, errorText } from '../ui.js';
 import { MONTHS, dayInMonth, daysUntil, whenText } from '../dates.js';
 import { monthSummary } from './budget.js';
@@ -14,9 +14,9 @@ export async function homeView(el, ctx) {
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth() + 1;
   const ny = m === 12 ? y + 1 : y, nm = m === 12 ? 1 : m + 1;
-  const [docs, reminders, items, paid, paidNext] = await Promise.all([
+  const [docs, reminders, items, paid, paidNext, events] = await Promise.all([
     loadDocs(space.id), loadReminders(space.id), loadItems(space.id),
-    loadPaid(space.id, ymKey(y, m)), loadPaid(space.id, ymKey(ny, nm))
+    loadPaid(space.id, ymKey(y, m)), loadPaid(space.id, ymKey(ny, nm)), loadEvents(space.id).catch(() => [])
   ]);
   const S = monthSummary(items, paid, y, m);
 
@@ -71,6 +71,10 @@ export async function homeView(el, ctx) {
       <a class="stat" href="#/parm"><span class="label">I pärmen</span><span class="value">${docs.length}</span><span class="small muted">dokument</span></a>
       <a class="stat" href="#/paminnelser"><span class="label">Påminnelser</span><span class="value">${reminders.length}</span><span class="small muted">totalt</span></a>
     </section>
+    <div class="card flush"><a class="list-row" href="#/tidslinje" style="min-height:68px">
+      <span style="width:40px;height:40px;border-radius:12px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon('clock', 22)}</span>
+      <span class="grow stack" style="gap:2px"><span class="title">Husets tidslinje</span><span class="sub">${events.length ? events.length + (events.length === 1 ? ' händelse' : ' händelser') : 'Renoveringar, nya köp, service'}</span></span>
+      ${icon('right', 18, 2)}</a></div>
     ${installBanner()}
   </div>`;
 

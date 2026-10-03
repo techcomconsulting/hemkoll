@@ -38,7 +38,7 @@ function spaceSelect(ctx, current) {
 }
 export { spaceSelect };
 
-export function openDocEditor(ctx, existing = null, presetCat = 'receipt') {
+export function openDocEditor(ctx, existing = null, presetCat = 'receipt', onSaved = null) {
   const d = existing || { category: presetCat, date: today() };
   const s = openSheet(`
     <h2>${existing ? 'Ändra' : 'Lägg till i pärmen'}</h2>
@@ -55,7 +55,7 @@ export function openDocEditor(ctx, existing = null, presetCat = 'receipt') {
     <div class="field"><label for="dw">Garanti gäller till (valfritt)</label><input class="input" id="dw" type="date" value="${esc(d.warrantyUntil || '')}">
       <span class="hint">Du får en påminnelse på översikten innan den går ut.</span></div>
     <div class="field"><label for="dn">Anteckning (valfritt)</label><textarea class="input" id="dn" maxlength="1000">${esc(d.note || '')}</textarea></div>
-    ${existing ? '' : spaceSelect(ctx, ctx.state.spaceId)}
+    ${existing || onSaved ? '' : spaceSelect(ctx, ctx.state.spaceId)}
     <p class="error hidden" role="alert">Skriv vad det är.</p>
     <div class="btn-row"><button class="btn" data-close>Avbryt</button><button class="btn primary" data-save>Spara</button></div>`, 'Pärm');
 
@@ -85,6 +85,7 @@ export function openDocEditor(ctx, existing = null, presetCat = 'receipt') {
         for (const f of files) { await addFile(sid, id, await resizeImage(f, 1600, 0.75), count); count++; }
         s.close();
         toast('Sparat i pärmen.');
+        if (onSaved) { await onSaved(id); return; }
         if (!existing && sid !== ctx.state.spaceId) { ctx.setSpace(sid); }
         ctx.go('/parm/' + id);
       } catch (ex) { toast(errorText(ex)); }
