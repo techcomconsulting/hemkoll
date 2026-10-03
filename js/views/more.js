@@ -6,6 +6,7 @@ import {
 } from '../data.js';
 import { esc, icon, avatar, backLink, openSheet, confirmSheet, toast, busy, errorText } from '../ui.js';
 import { isInstalled, showInstall } from '../install.js';
+import { hasLoans } from './loans.js';
 
 export async function moreView(el, ctx) {
   const { state } = ctx;
@@ -33,6 +34,7 @@ export async function moreView(el, ctx) {
 
     <section class="card flush">
       <a class="list-row" href="#/tidslinje"><span style="color:var(--accent)">${icon('clock', 22)}</span><span class="grow title" style="font-weight:600">Husets tidslinje</span>${icon('right', 18, 2)}</a>
+      ${hasLoans() ? `<a class="list-row" href="#/lan"><span style="color:var(--accent)">${icon('wallet', 22)}</span><span class="grow title" style="font-weight:600">Lån och krediter</span>${icon('right', 18, 2)}</a>` : ''}
     </section>
 
     <section class="card flush">

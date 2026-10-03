@@ -224,3 +224,4 @@ img.photo { padding: 0; }
 .hl-item .sub { font-size: 13px; color: var(--muted); }
 .hl-dot { width: 40px; height: 40px; border-radius: 20px; background: var(--accent-soft); color: var(--accent); border: 3px solid #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; z-index: 1; }
 .card > .between:first-child { border-top: 0 !important; }
+.loan-warn { display: flex; gap: 12px; align-items: flex-start; background: #fff; color: #000; border: 2px solid #000; border-radius: 14px; padding: 14px; font-size: 15px; line-height: 1.4; }

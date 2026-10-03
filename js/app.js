@@ -10,6 +10,7 @@ import { remindersView } from './views/reminders.js';
 import { budgetView } from './views/budget.js';
 import { moreView, spaceView } from './views/more.js';
 import { openAddMenu } from './views/add.js';
+import { loansView } from './views/loans.js';
 import { timelineView, eventView, shareView, PENDING_IMPORT } from './views/timeline.js';
 
 const root = document.getElementById('app');
@@ -32,6 +33,7 @@ const routes = [
   [/^\/tidslinje$/, timelineView, 'more'],
   [/^\/tidslinje\/([^/]+)$/, eventView, 'more'],
   [/^\/delning\/([^/]+)$/, shareView, null],
+  [/^\/lan$/, loansView, 'more'],
   [/^\/budget$/, budgetView, 'budget'],
   [/^\/mer$/, moreView, 'more'],
   [/^\/flik\/([^/]+)$/, spaceView, 'more']

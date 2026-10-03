@@ -1,11 +1,11 @@
 // Gör att appen startar snabbt och kan installeras på hemskärmen.
 // Byt versionen när du laddar upp en ny version av appen.
-const VERSION = 'hemkoll-v3';
+const VERSION = 'hemkoll-v4';
 const FILES = [
   './', './index.html', './css/app.css', './manifest.webmanifest',
   './js/app.js', './js/install.js', './js/config.js', './js/firebase.js', './js/data.js', './js/ui.js', './js/dates.js',
   './js/views/auth.js', './js/views/home.js', './js/views/binder.js', './js/views/reminders.js',
-  './js/views/budget.js', './js/views/more.js', './js/views/add.js', './js/views/timeline.js',
+  './js/views/budget.js', './js/views/more.js', './js/views/add.js', './js/views/timeline.js', './js/views/loans.js',
   './icons/icon-192.png', './icons/icon-512.png'
 ];
 
