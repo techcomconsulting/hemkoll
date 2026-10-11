@@ -11,6 +11,7 @@ import { budgetView } from './views/budget.js';
 import { moreView, spaceView } from './views/more.js';
 import { openAddMenu } from './views/add.js';
 import { loansView } from './views/loans.js';
+import { joinView, PENDING_JOIN } from './views/join.js';
 import { timelineView, eventView, shareView, PENDING_IMPORT } from './views/timeline.js';
 
 const root = document.getElementById('app');
@@ -20,7 +21,7 @@ export const state = { user: null, profile: null, spaces: [], invites: [], space
 
 const PUBLIC = ['/login', '/registrera', '/glomt'];
 // Sidor som alla kan öppna, inloggad eller inte.
-const OPEN = /^\/delning\/[^/]+$/;
+const OPEN = /^\/(delning|bjud)\/[^/]+$/;
 
 const routes = [
   [/^\/login$/, loginView, null],
@@ -34,6 +35,7 @@ const routes = [
   [/^\/tidslinje\/([^/]+)$/, eventView, 'more'],
   [/^\/delning\/([^/]+)$/, shareView, null],
   [/^\/lan$/, loansView, 'more'],
+  [/^\/bjud\/([^/]+)$/, joinView, null],
   [/^\/budget$/, budgetView, 'budget'],
   [/^\/mer$/, moreView, 'more'],
   [/^\/flik\/([^/]+)$/, spaceView, 'more']
@@ -114,8 +116,12 @@ async function route(keepScroll = false) {
   if (state.user && PUBLIC.includes(path)) { location.hash = '#/'; return; }
   // Kom personen från en delad länk? Gå tillbaka dit efter inloggning.
   if (state.user && state.profile && !open) {
-    let t = null;
-    try { t = localStorage.getItem(PENDING_IMPORT); localStorage.removeItem(PENDING_IMPORT); } catch { /* ok */ }
+    let t = null, j = null;
+    try {
+      t = localStorage.getItem(PENDING_IMPORT); localStorage.removeItem(PENDING_IMPORT);
+      j = localStorage.getItem(PENDING_JOIN); localStorage.removeItem(PENDING_JOIN);
+    } catch { /* ok */ }
+    if (j) { location.hash = '#/bjud/' + j; return; }
     if (t) { location.hash = '#/delning/' + t; return; }
   }
   const found = routes.find(([re]) => re.test(path));

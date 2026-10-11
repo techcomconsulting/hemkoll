@@ -45,6 +45,13 @@ service cloud.firestore {
           && request.resource.data.members.hasAll(resource.data.members)
           && request.resource.data.members.removeAll(resource.data.members).hasOnly([me()])
           && !(me() in request.resource.data.invited))
+        ||
+        // Den som har en inbjudningslänk till fliken får lägga till sig själv.
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberNames', 'joinToken'])
+          && request.resource.data.members.hasAll(resource.data.members)
+          && request.resource.data.members.removeAll(resource.data.members).hasOnly([me()])
+          && exists(/databases/$(database)/documents/joinLinks/$(request.resource.data.joinToken))
+          && get(/databases/$(database)/documents/joinLinks/$(request.resource.data.joinToken)).data.space == sid)
       );
 
       allow delete: if signedIn() && resource.data.owner == me();
@@ -53,6 +60,15 @@ service cloud.firestore {
       match /{path=**} {
         allow read, write: if isMember(sid);
       }
+    }
+
+    // Inbjudningslänkar till en flik. Länken är lång och slumpad.
+    match /joinLinks/{token} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if signedIn() && request.resource.data.createdBy == me()
+        && isMember(request.resource.data.space);
+      allow delete: if signedIn() && resource.data.createdBy == me();
     }
 
     // Delade länkar till husets tidslinje (till en ny ägare).

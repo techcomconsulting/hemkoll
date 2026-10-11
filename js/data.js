@@ -174,6 +174,32 @@ export async function deleteSpace(sid) {
   await deleteDoc(doc(db, 'spaces', sid));
 }
 
+// ---------- Inbjudan med länk ----------
+// Länken går att skicka till vem som helst, även den som saknar konto.
+
+export async function createInviteLink(sid, spaceName, fromName) {
+  const token = newToken();
+  await setDoc(doc(db, 'joinLinks', token), {
+    space: sid, spaceName, fromName, createdBy: auth.currentUser.uid, createdAt: serverTimestamp()
+  });
+  return token;
+}
+
+export async function getInviteLink(token) {
+  const s = await getDoc(doc(db, 'joinLinks', token));
+  return s.exists() ? { id: s.id, ...s.data() } : null;
+}
+
+export async function joinWithLink(token, uid, firstName) {
+  const inv = await getInviteLink(token);
+  if (!inv) return null;
+  invalidate('spaces');
+  await updateDoc(doc(db, 'spaces', inv.space), {
+    members: arrayUnion(uid), [`memberNames.${uid}`]: firstName, joinToken: token
+  });
+  return inv.space;
+}
+
 // ---------- Pärmen ----------
 
 export const DOC_CATS = [

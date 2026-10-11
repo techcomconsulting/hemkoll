@@ -7,6 +7,7 @@ import {
 import { esc, icon, avatar, backLink, openSheet, confirmSheet, toast, busy, errorText } from '../ui.js';
 import { isInstalled, showInstall } from '../install.js';
 import { hasLoans } from './loans.js';
+import { openInviteSheet, inviteByLink } from './join.js';
 
 export async function moreView(el, ctx) {
   const { state } = ctx;
@@ -28,6 +29,7 @@ export async function moreView(el, ctx) {
           <span class="grow stack" style="gap:2px"><span class="title">${esc(s.name)}</span><span class="sub">${s.personal ? 'Bara du' : esc(Object.values(s.memberNames || {}).join(', '))}</span></span>
           ${icon('right', 18, 2)}</a>`).join('')}
       </div>
+      <button class="btn primary block" data-invite-any>${icon('users', 20)}Bjud in någon</button>
       <button class="btn outline block" data-new>${icon('plus', 20, 2.2)}Ny gemensam flik</button>
       <p class="small muted">En gemensam flik, t.ex. "Hushållet", delar ni. Alla med i fliken ser och kan ändra samma pärm och budget.</p>
     </section>
@@ -45,6 +47,7 @@ export async function moreView(el, ctx) {
   </div>`;
 
   el.querySelector('[data-home]')?.addEventListener('click', showInstall);
+  el.querySelector('[data-invite-any]').addEventListener('click', () => openInviteSheet(ctx));
   el.querySelector('[data-logout]').addEventListener('click', async () => { await signOut(auth); location.hash = '#/login'; });
   el.querySelector('[data-new]').addEventListener('click', () => {
     const s = openSheet(`
@@ -108,8 +111,10 @@ export async function spaceView(el, ctx, sid) {
           ${isOwner && u !== me ? `<button class="btn sm" data-kick="${u}">Ta bort</button>` : ''}</div>`).join('')}
         ${invited.map(([u, n]) => `<div class="list-row">${avatar(n, null, 36)}<span class="grow stack" style="gap:2px"><span class="title">${esc(n)}</span><span class="sub">Inbjuden, väntar på svar</span></span><button class="btn sm" data-uninvite="${u}">Avbryt</button></div>`).join('')}
       </div></section>
+      <button class="btn primary block" data-linkinv>${icon('share', 20)}Bjud in med länk</button>
+      <span class="hint" style="margin-top:-8px">Skicka via sms eller mejl. Funkar även för den som inte har konto.</span>
       <form class="stack" data-invite novalidate>
-        <label for="ie" style="font-size:14px;font-weight:600">Bjud in med e-post</label>
+        <label for="ie" style="font-size:14px;font-weight:600">Eller bjud in med e-post</label>
         <div class="row" style="gap:8px"><input class="input grow" id="ie" type="email" autocapitalize="none" placeholder="namn@exempel.se"><button class="btn primary" type="submit" style="height:50px">Bjud in</button></div>
         <span class="hint">Personen behöver ha ett konto i Hemkoll.</span>
       </form>
@@ -126,6 +131,7 @@ export async function spaceView(el, ctx, sid) {
       try { await renameSpace(sid, n); await ctx.reloadSpaces(); sh.close(); ctx.rerender(); } catch (ex) { toast(errorText(ex)); }
     });
   });
+  el.querySelector('[data-linkinv]')?.addEventListener('click', (e) => inviteByLink(ctx, s, e.currentTarget));
   el.querySelector('[data-invite]')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const email = el.querySelector('#ie').value.trim();
